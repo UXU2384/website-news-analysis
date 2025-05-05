@@ -1,0 +1,10 @@
+name,value
+list_freq_daily_line_chart,"[[{'x': '2025-03-04', 'y': 1}, {'x': '2025-03-05', 'y': 1}, {'x': '2025-03-06', 'y': 0}, {'x': '2025-03-07', 'y': 6}], [{'x': '2025-03-04', 'y': 0}, {'x': '2025-03-05', 'y': 1}, {'x': '2025-03-06', 'y': 0}, {'x': '2025-03-07', 'y': 7}], [{'x': '2025-03-04', 'y': 1}, {'x': '2025-03-05', 'y': 1}, {'x': '2025-03-06', 'y': 2}, {'x': '2025-03-07', 'y': 6}]]"
+list_pkNames,"['網路', '資安', '企業']"
+list_colors,"['rgba(0,128,0,0.2)', 'rgba(0,255,255,0.2)', 'rgba(0,0,255,0.2)']"
+list_photos,"['https://blog.twnic.tw/wp-content/uploads/2022/07/%E5%85%AC%E9%96%8B%E7%B6%B2%E8%B7%AF%E4%B8%8A%E7%9A%84%E9%9A%B1%E7%A7%81%E5%AE%89%E5%85%A8-scaled.jpg', 'https://cw-image-resizer.cwg.tw/resize/uri/https%3A%2F%2Fcdn-www.cw.com.tw%2Farticle%2F202207%2Farticle-62c7edd466a44.jpg/?w=1600&format=webp', 'https://imgs.gvm.com.tw/upload/gallery/20220810/112806.jpg']"
+list_freq_news_category,"[[8, 3, 2, 3], [8, 3, 1, 4], [10, 4, 3, 3]]"
+list_category,"['全部', 'AI', '雲端', '資安']"
+list_sentiInfo,"[[100, 0, 0], [88, 0, 12], [100, 0, 0]]"
+list_total_articles,"[8, 8, 10]"
+list_total_frequency,"[225, 265, 163]"

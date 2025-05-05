@@ -1,0 +1,6 @@
+name,value
+freqByDate,"[{'x': '2025-03-05', 'y': 1}, {'x': '2025-03-06', 'y': 0}, {'x': '2025-03-07', 'y': 7}]"
+freqByCate,"[8, 3, 1, 4]"
+category,"['全部', 'AI', '雲端', '資安']"
+num_frequency,342
+num_occurrence,8
