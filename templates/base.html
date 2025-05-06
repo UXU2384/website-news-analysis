@@ -40,8 +40,9 @@
                   <div class="btn-group">
                     <button type="button" class="btn dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">進階查詢</button>
                     <div class="dropdown-menu">
-                      <a class="dropdown-item" href="{% url 'app_user_keyword:home' %}">自訂關鍵詞熱門度分析</a>
+                      <a class="dropdown-item" href="{% url 'app_user_keyword_db:home' %}">自訂關鍵詞熱門度分析</a>
                       <a class="dropdown-item" href="{% url 'app_sentiment:home' %}">關鍵詞情緒分析</a>
+                      <a class="dropdown-item" href="{% url 'app_user_keyword_llm_report:home' %}">自訂關鍵詞:呼叫語言模型產生分析報告</a>
                     </div>
                   </div>
 
