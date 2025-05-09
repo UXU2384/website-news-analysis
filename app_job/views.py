@@ -66,7 +66,7 @@ def jobs_to_dataframe(jobs, category:str):
         })
     return pd.DataFrame(job_data)
 
-def api_get_job():
+def update_job():
 
     df = pd.DataFrame()
     max_pages = 3
