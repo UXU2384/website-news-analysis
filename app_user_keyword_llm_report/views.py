@@ -8,20 +8,23 @@ import math
 import re
 from collections import Counter
 
-from app_user_keyword.views import filter_dataFrame, api_get_user_keyword
+from app_user_keyword.views import api_get_user_keyword, filter_dataFrame
 from app_sentiment.views import api_get_sentiment
 import markdown
 import json
 
    
 import requests
-url = "http://163.18.22.32:11435/api/generate"
-# 設置遠程 Ollama 模型的基礎 URL
-REMOTE_OLLAMA_URL = "http://163.18.22.32:11435"
 
-model_name = "gemma3:4b"  # 默認模型名稱
-# model_name = "qwen2.5:7b"  # 默認模型名稱
-#model_name = "deepseek-r1:14b"  # 默認模型名稱
+# 設置遠程 Ollama 模型的基礎 URL
+# REMOTE_OLLAMA_URL = "http://163.18.22.32:11435"
+# url = "http://163.18.22.32:11435/api/generate"
+
+REMOTE_OLLAMA_URL = "http://localhost:11434"
+url = "http://localhost:11434/api/generate"
+
+model_name = "gemma3:1b"  # 默認模型名稱
+
 # 列出所有可用的模型
 print(f"正在連接 {REMOTE_OLLAMA_URL} 檢查可用模型...")
 response = requests.get(f"{REMOTE_OLLAMA_URL}/api/tags")

@@ -14,5 +14,8 @@ urlpatterns = [
     path('userkeyword_db/', include('app_user_keyword_db.urls')),
     # admin 後台資料庫管理
     path('admin/', admin.site.urls),
-    path('user_keyword_report/', include('app_user_keyword_llm_report.urls'))
+    path('user_keyword_report/', include('app_user_keyword_llm_report.urls')),
+    path('jobanalysis/', include('app_job_analysis.urls')),
+    path('intro/', include('app_intro.urls')),
+    path('', include("app_intro.urls"))
 ]

@@ -55,15 +55,7 @@ def api_get_userkey_data(request):
     
     print(key_occurrence_cat)
     
-    # (5) get line chart data
-    # key_time_freq = [
-    # '{"x": "2019-03-07", "y": 2}',
-    # '{"x": "2019-03-08", "y": 2}',
-    # '{"x": "2019-03-09", "y": 13}']
-    
-    # key_time_freq = get_keyword_time_based_freq(queryset) # OK 使用 pandas 很方便
-    # key_time_freq = get_keyword_time_based_freq_raw_sql(queryset) # OK 使用原生 SQL 整理時間次數資料也可以
-    
+
     # 失敗
     key_time_freq = get_keyword_time_based_freq_with_orm(queryset)
 

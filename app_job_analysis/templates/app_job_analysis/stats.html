@@ -1,0 +1,213 @@
+{% extends 'base.html' %}
+
+{% block title %} 職缺統計 {% endblock %}
+
+{% block content %}
+
+<h1>職缺統計頁面</h1>
+<p class="h1-mini">最近資料更新時間：<strong>{{ latest_time }}</strong></p>
+
+<div class="container">
+    <div class="left">
+        <section>
+            <h2>程式語言薪資排名</h2>
+            <table id="lang-table">
+                <thead>
+                    <tr>
+                        <th>程式語言</th>
+                        <th>最高薪資</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+
+        <section>
+            <h2>公司薪資排名</h2>
+            <table id="company-table">
+                <thead>
+                    <tr>
+                        <th>公司</th>
+                        <th>語言</th>
+                        <th>最高薪資</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+    </div>
+
+    <div class="right">
+        <section>
+            <h2>職缺數量時間趨勢</h2>
+            <canvas id="trend-chart" width="800" height="400"></canvas>
+        </section>
+    </div>
+</div>
+
+<div id="tooltip"></div>
+
+{% endblock %}
+
+{% block extra_js %}
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    let api_url = 'http://127.0.0.1:8000/jobanalysis'
+    $(document).ready(function () {
+
+        // 1. 讀取語言資料
+        $.getJSON(api_url + '/api/top-by-lang/', function (data) {
+            data.slice(0, 10).forEach(function (item) {
+                $('#lang-table tbody').append(
+                    `<tr><td>${item.category}</td><td>${item.max_salary}</td></tr>`);
+            });
+        });
+
+
+        // 2. 讀取公司資料
+        $.getJSON(api_url + '/api/top-by-company/', function (data) {
+            data.forEach(function (item) {
+                let tr = $(`<tr><td class="company-cell">${item.company}</td><td>${item.category}</td><td>${item.max_salary}</td></tr>`);
+                tr.find('.company-cell')
+                    .data('title', item.title)
+                    .data('content', item.content)
+                    .data('link', item.link);
+                $('#company-table tbody').append(tr);
+            });
+
+            $('.company-cell')
+                .on('mouseenter', function () {
+                    const title = $(this).data('title') || '';
+                    const content = $(this).data('content') || '';
+                    $('#tooltip').html(`<strong>${title}</strong><br>${content}`).show();
+                })
+                .on('mousemove', function (e) {
+                    const tooltip = $('#tooltip');
+                    const tW = tooltip.outerWidth(), tH = tooltip.outerHeight();
+                    const wW = $(window).width(), wH = $(window).height();
+                    let left = e.clientX + 15, top = e.clientY + 15;
+                    // 防邊界
+                    if (left + tW > wW) left = e.clientX - tW - 15;
+                    if (top + tH > wH) top = e.clientY - tH - 15;
+                    tooltip.css({ left: left + 'px', top: top + 'px' });
+                })
+                .on('mouseleave', function () {
+                    $('#tooltip').hide();
+                })
+                .on('click', function () {
+                    const url = $(this).data('link');
+                    if (url) window.open(url, '_blank');
+                });
+        });
+
+
+        // 3. 讀取每日職缺數量，畫 line chart
+        $.getJSON(api_url + '/api/count-by-date/', function (data) {
+            const labels = data.map(d => d.date);
+            const counts = data.map(d => d.count);
+            const ctx = document.getElementById('trend-chart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '職缺數量',
+                        borderColor: '#9D9888',
+                        backgroundColor: 'rgba(180, 222, 170,0.3)', //背景顏色
+                        data: counts,
+                        fill: true,
+                    }]
+                },
+                options: {
+                    scales: {
+                        x: { display: true, title: { display: true, text: '日期' } },
+                        y: { display: true, title: { display: true, text: '數量' } }
+                    }
+                }
+            });
+        });
+    });
+</script>
+
+<style>
+
+
+    .container {
+        display: flex;
+        /* flex-wrap: wrap; */
+    }
+
+    .left,
+    .right {
+        padding: 16px;
+    }
+
+    .left {
+        width: calc(40%, 200px);
+    }
+
+    .right {
+        width: calc(60%, 300px);
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 16px;
+        background: #F8F4E7;
+    }
+
+    table,
+    th,
+    td {
+        border: 1px solid #ccc;
+    }
+
+    th,
+    td {
+        padding: 8px;
+        text-align: left;
+    }
+
+    section {
+        background-color: #ffffff;
+        border: 1px solid #9D9888;
+        padding: 12px;
+        margin: auto;
+        margin-bottom: 16px;
+
+    }
+
+    h1,
+    h2 {
+        color: #2e6734;
+    }
+
+    h1,
+    .h1-mini {
+        margin-left: 1rem;
+    }
+
+    #tooltip {
+        position: fixed;
+        background-color: #fff;
+        border: 1px solid #ccc;
+        padding: 10px;
+        width: fit-content;
+        height: fit-content;
+        z-index: 9999;
+        display: none;
+        white-space: pre-wrap;
+        box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2);
+        pointer-events: none;
+    }
+
+    .company-cell {
+        cursor: pointer;
+    }
+</style>
+
+{% endblock %}

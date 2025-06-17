@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import re
 
 # Load Data 
-df = pd.read_csv('app_sentiment/dataset/ithome_news_200_preprocessed.csv',sep='|')
+df = pd.read_csv('app_sentiment/datasets/ithome_news_200_preprocessed.csv',sep='|')
 # Step 0: Filter news articles using the following function
 # Searching keywords from "content" column
 def filter_df_via_content(df:pd.DataFrame, query_keywords, cond, cate, weeks):

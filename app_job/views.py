@@ -1,31 +1,41 @@
-import re
-import requests as rq
-import pandas as pd
-import time
-
-from django.http import JsonResponse, HttpRequest
-from django.shortcuts import render
 from fake_useragent import UserAgent
 from collections import Counter
 from ckip_transformers.nlp import CkipWordSegmenter, CkipPosTagger, CkipNerChunker
+from datetime import datetime
+import time
+import ast
+import re
+import requests as rq
 
 
-# Create your views here.
-#https://www.104.com.tw/jobs/search/?keyword=C%23&order=13&jobsource=joblist_search&page=1&area=6001016000&asc=0&jobexp=1&ro=1&searchJobs=1
+from django.http import JsonResponse, HttpRequest
+from django.shortcuts import render
+
+
+from app_job.models import JobsData, JobCategoryTopKey
+
+
 def home(request):
     return render(request,'app_job/home.html')
 
 user_agent = UserAgent()
 keywords = ["C#", "Python", "JavaScript"]
 
-def fetch_104_jobs(keyword="Python", page=1):
+
+def fetch_104_jobs(keyword="Python", page=1, start_date=30):
     url = "https://www.104.com.tw/jobs/search/list"
     params = {
-        "ro": "0",  # 全職
+        "ro": "1", # 全職
+        "s9": "1",  # 日班
         "keyword": keyword,
-        "area": "6001001000",  # 高雄
-        "exp": "1",  # 無經驗限制
-        "page": str(page)
+        "area": "6001016000",  # 高雄
+        "jobexp": "1",  # 1 年以下
+        "page": str(page),
+        "isnew": str(start_date),
+        # "sctp": M # 月薪
+        # "scmin": "35000", # 起薪
+        "edu": "4", # 大學畢業
+        "dep": "3006005000", # 資訊管理系相關
     }
 
     headers = {
@@ -40,52 +50,81 @@ def fetch_104_jobs(keyword="Python", page=1):
         print(f"請求失敗：{res.status_code}")
         return []
 
-def jobs_to_dataframe(jobs, category:str):
-    job_data = []
-    for job in jobs:
 
-        timestamp = job['appearDate']
-        
+def extract_start_salary(text):
+    # 正規表示式：匹配「月薪」開頭後面接一串數字（有可能有逗號）
+    match = re.search(r"月薪\s*([\d,]+)", text)
+    if match:
+        # 移除逗號，轉成整數
+        return int(match.group(1).replace(",", ""))
+    return 28000
+
+def jobs_to_db(jobs, category:str):
+
+    for i, job in enumerate(jobs):
+
         cont = job['description']
         cont = re.sub(r'◆\n*', '\n', cont)
         cont = re.sub(r'\xa0', '', cont)
+        cont = re.sub(r"<[^>]+>", "", cont)
+        cont = re.sub(r'[\[\]]', '', cont)
 
         link = job['link']['job']
-        
 
-        job_data.append({
-            'id': f'{category}_{timestamp}',
-            "timestamp": job['appearDate'],
-            'category': category,
-            "title": job['jobName'],
-            'content': cont,
-            "company": job['custName'],
-            "address": job['jobAddress'],
-            "link": f"https://{link}",
-            
-        })
-    return pd.DataFrame(job_data)
+        timestamp = datetime.now().date()
+        update_date = datetime.strptime(job["appearDate"], "%Y%m%d").date()
+
+        full_link = f"https:{link}"
+        JobsData.objects.update_or_create(
+            link = full_link,
+            defaults={
+                "id": f"{category}_{timestamp}_{i}",
+                "category": category,
+                "timestamp": timestamp,
+                "updated_at": update_date,
+                "title": job["jobName"],
+                "content": cont,
+                "company": job["custName"],
+                "address": job["jobAddrNoDesc"] + job["jobAddress"],
+                "link": full_link,
+                "salary": extract_start_salary(job["salaryDesc"])
+            }
+        )
+
+
 
 def update_job():
+    
+    today = datetime.now().date()
+    print(today)
 
-    df = pd.DataFrame()
+    if JobsData.objects.filter(timestamp=today).exists():
+        print("⏳ 今天已經更新過JobsData，跳過更新")
+        return
+    
     max_pages = 3
 
     for kw in keywords:
         print(f"🔍 搜尋關鍵字：{kw}")
         cate_jobs = []
+
         for page in range(1, max_pages + 1):
             jobs = fetch_104_jobs(keyword=kw, page=page)
             print(f"  第 {page} 頁：抓到 {len(jobs)} 筆")
             cate_jobs.extend(jobs)
             time.sleep(5)  # ⏱ 避免被封鎖
 
-        df = pd.concat([df, jobs_to_dataframe(cate_jobs, kw)], ignore_index=True)
-            
-    df.drop_duplicates(subset=["link"], inplace=True)  # 去重複
-    print(df.head())  # 預覽前幾筆
-    df.to_csv("app_job/datasets/104_jobs.csv", sep='|', index=False, mode="a", header=False)
-    print("✅ 已儲存成 DataFrame 並輸出為 104_jobs.csv")
+        jobs_to_db(cate_jobs, kw)
+
+    # 建立模型
+    ws = CkipWordSegmenter(model="albert-tiny")
+    pos = CkipPosTagger(model="albert-tiny")
+    ner = CkipNerChunker(model="albert-tiny")
+
+    ckiplab_word(ws, pos, ner)
+    topkey_category_orm_save()
+
+    print("✅ 104 工作資料更新完畢")
 
 
 def word_frequency(wp_pair, allowPOS):
@@ -93,127 +132,97 @@ def word_frequency(wp_pair, allowPOS):
     for word, pos in wp_pair:
         if (pos in allowPOS) & (len(word) >= 2):
             filtered_words.append(word)
-        #print('%s %s' % (word, pos))
     counter = Counter(filtered_words)
     return counter.most_common(200)
 
-def ckiplab_word():
-    ws = CkipWordSegmenter(model="albert-tiny")
-    pos = CkipPosTagger(model="albert-tiny")
-    ner = CkipNerChunker(model="albert-tiny")
-    df = pd.read_csv('app_job/datasets/104_jobs.csv', sep='|')
-    ## Word Segmentation
-    tokens = ws(df.content)
+def ckiplab_word(ws:CkipWordSegmenter, pos:CkipPosTagger, ner:CkipNerChunker):
 
-    ## POS
+    # 篩選今天的資料
+    today = datetime.now().date()
+    jobs = JobsData.objects.filter(timestamp=today)
+
+    contents = [job.content for job in jobs]
+
+    # CKIP 處理
+    tokens = ws(contents)
     tokens_pos = pos(tokens)
-
-    ## word pos pair 詞性關鍵字
-    word_pos_pair = [list(zip(w, p)) for w, p in zip(tokens, tokens_pos)]
-
-    ## NER命名實體辨識
-    entity_list = ner(df.content)
+    entity_list = ner(contents)
 
     allowPOS = ['Na', 'Nb', 'Nc', 'VC']
+    word_pos_pair = [list(zip(w, p)) for w, p in zip(tokens, tokens_pos)]
+    tokens_v2 = [[w for w, p in wp if len(w) >= 2 and p in allowPOS] for wp in word_pos_pair]
 
-    tokens_v2 = []
-    for wp in word_pos_pair:
-        tokens_v2.append([w for w, p in wp if (len(w) >= 2) and p in allowPOS])
+    # 頻率分析（你自定義的函數）
+    keyfreqs = [word_frequency(wp, allowPOS=allowPOS) for wp in word_pos_pair]
 
-    # Insert tokens into dataframe (新增斷詞資料欄位)
-    df['tokens'] = tokens
-    df['tokens_v2'] = tokens_v2
-    df['entities'] = entity_list
-    df['token_pos'] = word_pos_pair
+    # 寫回資料庫
+    for job, token, token_v2, wp, tf, ents in zip(jobs, tokens, tokens_v2, word_pos_pair, keyfreqs, entity_list):
+        job.tokens = token
+        job.token_pos = wp
+        job.tokens_v2 = token_v2
+        job.top_key_freq = tf
+        job.entities = ents
+        job.save()
+
+    print("✅ 今天的職缺 NLP 分析完成！")
 
 
-    keyfreqs = []
-    for wp in word_pos_pair:
-        topwords = word_frequency(wp, allowPOS=allowPOS)
-        keyfreqs.append(topwords)
+def topkey_category_orm_save():
+    allowedPOS = ['Na', 'Nb', 'Nc']
+    data = JobsData.objects.values_list('category', flat=True).distinct()
+    top_group_words = get_top_words_orm(data, allowedPOS)
 
-    df['top_key_freq'] = keyfreqs
+    # top_group_words 是 list of (category, top_keys)
+    for category, top_keys in top_group_words:
+        
+        JobCategoryTopKey.objects.update_or_create(
+            category=category,
+            defaults={'top_keys': str(top_keys)}
+        )
+    print("✅ 已將分類 top keys 存入資料庫")
 
-    # Abstract (summary) and sentimental score(摘要與情緒分數)
-    summary = []
-    sentiment = []
-    for text in df.content:
-        summary.append("暫無")
-        sentiment.append("暫無")
+def get_top_words_orm(keywords, allowedPOS):
+    
+    top_cate_words = {}
+    counter_all = Counter()
 
-    df['summary'] = summary
-    df['sentiment'] = sentiment
-
-    # Rearrange the colmun order for readability
-    df = df[[
-        'id', 'timestamp','category', 'title', 'content', 'sentiment', 'summary',
-        'top_key_freq', 'tokens', 'tokens_v2', 'entities', 'token_pos', 'link',
-        "company", "address"
-    ]]
-
-    # Save data to disk
-    df.to_csv('app_job/datasets/104_preprocessed.csv', sep='|', index=False)
-    print("Tokenize OK!")
-
-def topkey_category():
-    df = pd.read_csv('app_job/datasets/104_preprocessed.csv',sep='|')
-    # Filter condition: two words and specified POS
-    # 過濾條件:兩個字以上 特定的詞性
-    allowedPOS=['Na','Nb','Nc']
-    # Save top 20 word frequency for each category
-    top_group_words = get_top_words(df,allowedPOS)
-    df_top_group_words = pd.DataFrame(top_group_words, columns = ['category','top_keys'])
-    df_top_group_words.to_csv('app_job/datasets/104_jobs_topkey_with_category_via_token_pos.csv', index=False)
-
-#
-# get topk keyword function
-def get_top_words(df,allowedPOS):
-    top_cate_words={} # final result
-    counter_all = Counter() # counter for category '全部'
     for category in keywords:
+        # 取出該分類的所有 Job，且 token_pos 不為空
+        qs = JobsData.objects.filter(category=category).exclude(token_pos__isnull=True)
 
-        df_group = df[df.category == category]
-
-        # concatenate all filtered words in the same category
         words_group = []
-        for row in df_group.token_pos:
 
-            # filter words for each news
-            filtered_words =[]
-            for (word, pos) in eval(row):
-                if (len(word) >= 2) & (pos in allowedPOS):
-                    filtered_words.append(word)
+        # 逐筆資料處理
+        for job in qs.iterator():  # iterator避免載入過多資料進記憶體
+            
+            token_pos_list = ast.literal_eval(job.token_pos)
 
-            # concatenate filtered words
-            words_group += filtered_words
+            flat_token_pos = [
+                (word, pos)
+                for word, pos in token_pos_list
+                if isinstance(word, str) and isinstance(pos, str)
+            ]
 
-        # now we can count word frequency
-        counter = Counter( words_group )
+            filtered_words = [
+                word for word, pos in flat_token_pos
+                if len(word.strip()) >= 2 and pos in allowedPOS
+            ]
+            words_group.extend(filtered_words)
 
-        # counter
-        counter_all += counter
+        counter = Counter(words_group)
+        counter_all.update(counter)
+
         topwords = counter.most_common(100)
+        top_cate_words[category] = topwords
 
-        # store topwords
-        top_cate_words[category]= topwords
-
-    # Process category '全部'
+    # '全部'分類詞頻
     top_cate_words['ALL'] = counter_all.most_common(100)
+    print(top_cate_words)
+    return top_cate_words.items()
 
-    # To conveniently save data using pandas, we should convert dict to list.
-    return list(top_cate_words.items())
 
+update_job()
 
-# read df
-df_topkey = pd.read_csv('app_job/datasets/104_jobs_topkey_with_category_via_token_pos.csv', sep=',')
-
-# prepare data
-data={}
-for idx, row in df_topkey.iterrows():
-    data[row['category']] = eval(row['top_keys'])
-
-# We don't use it anymore, so delete it to save memory.
-del df_topkey
 
 # POST: csrf_exempt should be used
 # 指定這一支程式忽略csrf驗證
@@ -224,23 +233,31 @@ def api_get_job(request:HttpRequest):
     #cate = request.GET['news_category'] # this command also works.
     topk = request.POST.get('topk')
     topk = int(topk)
-    print(cate, topk)
-
-    chart_data, wf_pairs = get_category_job(cate, topk)
+    
+    chart_data, wf_pairs = get_category_job_orm(cate, topk)
     response = {'chart_data': chart_data,
          'wf_pairs': wf_pairs,
          }
     return JsonResponse(response)
 
-def get_category_job(cate, topk=10):
-    wf_pairs = data[cate][0:topk]
+
+def get_category_job_orm(cate, topk=10):
+    # ORM   
+    queryset = JobCategoryTopKey.objects.filter(category=cate).values('top_keys')
+    if queryset.exists():
+        top_keys_str = queryset[0]['top_keys']
+        wf_pairs = ast.literal_eval(top_keys_str)[0:topk]
+    else:
+        wf_pairs = []    
+    
     words = [w for w, f in wf_pairs]
     freqs = [f for w, f in wf_pairs]
     chart_data = {
         "category": cate,
         "labels": words,
-        "values": freqs
-    }
+        "values": freqs}
+    #print(chart_data)
     return chart_data, wf_pairs
 
 print("104_jobs--類別熱門關鍵字載入成功!")
+

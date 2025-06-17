@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+
+{% block title %} 專案介紹 {% endblock %}
+
+{% block content %}
+
+<header>
+  <h1>📊 專案介紹：IT 趨勢與職缺數據觀測</h1>
+  <p>分析 ITHome 熱門趨勢與 104 求職資料</p>
+</header>
+
+<section>
+  <h2>📰 ITHome 趨勢分析</h2>
+  <ul>
+    <a class="dropdown-item" href="{% url 'app_top_keyword:home' %}" style="color: black">
+      <li>各分類新聞最熱門的關鍵詞</li>
+    </a>
+    <a class="dropdown-item" href="{% url 'app_top_person:home' %}" style="color: black">
+      <li>熱門人物雷達（資料庫版）</li>
+    </a>
+    <a class="dropdown-item" href="{% url 'app_pk:home' %}" style="color: black">
+      <li>「網路 / 資安 / 企業」情緒分析 PK</li>
+    </a>
+    <a class="dropdown-item" href="{% url 'app_sentiment:home' %}" style="color: black">
+      <li>你關心的關鍵詞情緒分析（資料庫版）</li>
+    </a>
+    <a class="dropdown-item" href="{% url 'app_user_keyword_db:home' %}" style="color: black">
+      <li>全文檢索與你關心的關鍵詞關聯分析</li>
+    </a>
+    <a class="dropdown-item" href="{% url 'app_user_keyword_llm_report:home' %}" style="color: black">
+      <li>AI 自動產生分析報告</li>
+    </a>
+    <a class="dropdown-item" href="{% url 'app_fans:home' %}" style="color: black">
+      <li>網路風險的聲量觀察</li>
+    </a>
+  </ul>
+</section>
+
+<section>
+  <h2>💼 104 求職市場觀測</h2>
+  <ul>
+    <h3>1️⃣ 三語言職缺關鍵詞分析</h3>
+    <a class="dropdown-item" href="{% url 'app_job:home' %}" style="color: green">
+      <li>
+        針對 Python、JavaScript、C# 三種語言的職缺進行文本分析，找出公司最常提出的技術與技能需求。
+      </li>
+    </a>
+
+    <h3>2️⃣ 薪資與職缺統計</h3>
+    <a class="dropdown-item" href="{% url 'app_job_analysis:home' %}" style="color: green">
+      <li>各個程式語言的最高薪資</li>
+      <li>最高薪資公司排行</li>
+      <li>每日職缺數量與薪資變化趨勢圖</li>
+    </a>
+
+  </ul>
+</section>
+
+
+<footer>
+  本頁由我和GPT製作喔!
+</footer>
+
+<style>
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: "Segoe UI", sans-serif;
+    margin: 0;
+    background-color: #ceded0;
+    color: #333;
+  }
+
+  header {
+    background-color: #9D9888;
+    color: white;
+    padding: 2rem;
+    text-align: center;
+  }
+
+  header h1 {
+    margin: 0;
+    font-size: 2rem;
+  }
+
+  section {
+    max-width: 900px;
+    margin: 2rem auto;
+    padding: 1rem 2rem;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  section h2 {
+    border-bottom: 2px solid #ddd;
+    padding-bottom: 0.5rem;
+    margin-top: 2rem;
+    margin-left: 1rem;
+  }
+
+  h3 {
+    margin-left: 2rem;
+  }
+
+  ul {
+    padding-left: 1.2rem;
+  }
+
+  li {
+    margin-left: 3rem;
+    margin-bottom: 0.5rem;
+  }
+
+  footer {
+    text-align: center;
+    padding: 1rem;
+    font-size: 0.9rem;
+    color: #777;
+  }
+</style>
+
+{% endblock %}

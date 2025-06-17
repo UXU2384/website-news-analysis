@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 
 
-df = pd.read_csv('app_user_keyword/dataset/ithome_news_preprocessed.csv', sep='|')
+df = pd.read_csv('app_user_keyword/datasets/ithome_news_preprocessed.csv', sep='|')
 
 def home(request):
     return render(request,'app_user_keyword/home.html')

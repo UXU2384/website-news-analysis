@@ -8,7 +8,7 @@ def home(request):
                       'app_top_keyword/home.html')
 
 # read df
-df_topkey = pd.read_csv('app_top_keyword/dataset/ithome_news_topkey_with_category_via_token_pos.csv', sep=',')
+df_topkey = pd.read_csv('app_top_keyword/datasets/ithome_news_topkey_with_category_via_token_pos.csv', sep=',')
 
 # prepare data
 data={}

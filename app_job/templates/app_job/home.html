@@ -5,7 +5,7 @@
 {% block content %}
 <div class="col-lg-12">
     <h1>104工作關鍵字</h1>
-    <p>熱門度分析:</p>
+    <p style="margin-left: 0.5rem;">熱門度分析:</p>
 </div>
 
 <!-- 新聞類別選單------------------------------->
@@ -85,6 +85,11 @@
     </div>
 </div><!-- 區塊結束 -->
 
+<style>
+    body {
+        background-color: #ceded0;
+    }
+</style>
 
 {% endblock %}
 
@@ -162,9 +167,9 @@
             datasets: [{
                 label: category,
                 data: values,
-                borderColor: 'rgba(75, 192, 50, 1)',
-                backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                tension: 0.5 // 線的彎曲程度，0 為直線
+                backgroundColor: '#2e6734',
+                borderColor: '#2e6734',
+                borderWidth: 1,
             }],
         };
 
@@ -183,12 +188,22 @@
         let canvas_mychrat = document.getElementById("mychart");
 
 
+        //**先清除前一個圖 再繪新圖
+        // 可以印出barchart物件是否存在
+        // console.log(window.barchart);
+        //先清除前一個圖 再繪新圖 if 有以下兩種寫法皆可
+        // if (window.barchart)  //若存在則為true
+        // if (typeof (barchart) != "undefined"){
         if (window.barchart) {
             barchart.destroy();
         }
 
-        linechart = new Chart(canvas_mychrat, {
-            type: 'line',
+        //**繪圖(產生一個圖物件變數名稱為barchart)
+        // 必須全域變數--注意:前面不要有let, var, const等修飾詞
+        // 理由: 我們要讓它存在於網頁全域變數，
+        // 這樣我們才方便判斷是否有前一次的圖，如果存在有，要刪除之，否則，很多張圖會疊在一起 
+        barchart = new Chart(canvas_mychrat, {
+            type: 'bar',
             data: data,
             options: options,
         });

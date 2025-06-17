@@ -1,28 +1,24 @@
-import app_user_keyword.views as userkeyword_views
-from django.shortcuts import render
+import ast
+from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse, HttpRequest
-
+from django.contrib import messages
+from django.shortcuts import render, redirect
+from django.db.models import Q, Max, Min, F
 from datetime import datetime, timedelta
 import pandas as pd
 import math
 import re
 from collections import Counter
 
-def load_df_data():
-    # import and use df from app_user_keyword
-    global df  # global variable
-    df = userkeyword_views.df
 
-
-load_df_data()
+from app_user_keyword_db.models import NewsData
 
 
 # For the key association analysis
 def home(request):
     return render(request, 'app_user_keyword_association/home.html')
 
-# df_query should be global
+# query_set should be global
 
 
 @csrf_exempt
@@ -36,18 +32,18 @@ def api_get_userkey_associate(request:HttpRequest):
     
     key = userkey.split()
 
-    #global  df_query # global variable It's not necessary.
+    #global  query_set # global variable It's not necessary.
 
-    df_query = filter_dataFrame_fullText(key, cond, cate, weeks)
+    query_set = filter_newsdata_fulltext(key, cond, cate, weeks)
     #print(key)
-    print(len(df_query))
+    print(len(query_set))
 
-    if len(df_query) != 0:  # df_query is not empty
-        newslinks = get_title_link_topk(df_query, k=10)
-        related_words, clouddata = get_related_word_clouddata(df_query)
+    if len(query_set) != 0:  # query_set is not empty
+        newslinks = get_title_link_topk(query_set, k=10)
+        related_words, clouddata = get_related_word_clouddata(query_set)
         same_paragraph = get_same_para(
-            df_query, key, cond, k=6)  # multiple keywords
-        num_articles=len(df_query) # total number of articles (stories, items)
+            query_set, key, cond, k=6)  # multiple keywords
+        num_articles=len(query_set) # total number of articles (stories, items)
 
     else:
         newslinks = []
@@ -66,64 +62,50 @@ def api_get_userkey_associate(request:HttpRequest):
     return JsonResponse(response)
 
 
-# Searching keywords from "content" column
-# Here this function uses df['content'] column, while filter_dataFrame() uses df.tokens_v2
-def filter_dataFrame_fullText(user_keywords, cond, cate, weeks):
+def filter_newsdata_fulltext(user_keywords, cond, cate, weeks):
+    # (1) 取得最新日期
+    end_date = NewsData.objects.aggregate(max_time=Max('timestamp'))['max_time']
+    if end_date is None:
+        return pd.DataFrame()  # 如果資料為空
 
-    # end date: the date of the latest record of news
-    end_date = df['timestamp'].max()
+    end_date = end_date
+    start_date = end_date - timedelta(weeks=weeks)
 
-    # start date
-    start_date = (datetime.strptime(end_date, '%Y-%m-%d').date() -
-                  timedelta(weeks=weeks)).strftime('%Y-%m-%d')
+    # (2) 組合查詢條件：期間
+    condition = Q(timestamp__gte=start_date, timestamp__lte=end_date)
 
-    # (1) proceed filtering: a duration of a period of time
-    # 期間條件
-    period_condition = (df['timestamp'] >= start_date) & (df['timestamp'] <= end_date)
+    # (3) 組合查詢條件：分類
+    if cate != "全部":
+        condition &= Q(category=cate)
 
-    # (2) proceed filtering: news category
-    # 新聞類別條件
-    if (cate == "全部"):
-        condition = period_condition  # "全部"類別不必過濾新聞種類
-    else:
-        # category新聞類別條件
-        condition = period_condition & (df['category'] == cate)
+    # (4) 組合查詢條件：關鍵字 and / or
+    if cond == 'and':
+        for keyword in user_keywords:
+            condition &= Q(content__icontains=keyword)
+    elif cond == 'or':
+        keyword_condition = Q()
+        for keyword in user_keywords:
+            keyword_condition |= Q(content__icontains=keyword)
+        condition &= keyword_condition
 
-    # (3) proceed filtering: news category
-    # and or 條件
-    if (cond == 'and'):
-        # query keywords condition使用者輸入關鍵字條件and
-        condition = condition & df['content'].apply(lambda text: all(
-            (qk in text) for qk in user_keywords))  # 寫法:all()
-    elif (cond == 'or'):
-        # query keywords condition使用者輸入關鍵字條件
-        condition = condition & df['content'].apply(lambda text: any(
-            (qk in text) for qk in user_keywords))  # 寫法:any()
-    # condiction is a list of True or False boolean value
-    df_query = df[condition]
+    # (5) 查詢
+    queryset = NewsData.objects.filter(condition).order_by('-timestamp')
 
-    return df_query
+    return queryset
 
 
-# get titles and links from k pieces of news
-def get_title_link_topk(df_query, k=25):
+def get_title_link_topk(query_set, k=25):
     items = []
-    for i in range(len(df_query[0:k])):  # show only 10 news
-        category = df_query.iloc[i]['category']
-        title = df_query.iloc[i]['title']
-        link = df_query.iloc[i]['link']
-        photo = df_query.iloc[i]['photo']
-        # if photo value is NaN, replace it with empty string
-        if pd.isna(photo):
-            photo = ''
+    top_k_news = query_set[:k]  # ORM 支援 slicing
 
+    for news in top_k_news:
+        photo = news.photo if news.photo else ''
         item_info = {
-            'category': category,
-            'title': title,
-            'link': link,
+            'category': news.category,
+            'title': news.title,
+            'link': news.link,
             'photo': photo
         }
-
         items.append(item_info)
     return items
 
@@ -132,64 +114,62 @@ def get_title_link_topk(df_query, k=25):
 # because this name is used in Django
 
 
-def get_related_word_clouddata(df_query:pd.DataFrame):
-
-    # wf_pairs = get_related_words(df_query)
-    # prepare wf pairs
+def get_related_word_clouddata(query_set):
     counter = Counter()
-    for idx in range(len(df_query)):
-        pair_dict = dict(eval(df_query.iloc[idx]['top_key_freq']))
+    for news in query_set:
+        # top_key_freq 仍是字串，需要 eval 轉 dict
+        pair_dict = dict(ast.literal_eval(news.top_key_freq))
         counter += Counter(pair_dict)
-    wf_pairs = counter.most_common(20)  # return list format
 
-    # cloud chart data
-    # the minimum and maximum frequency of top words
-    min_ = wf_pairs[-1][1]  # the last line is smaller
+    wf_pairs = counter.most_common(20)  # top 20
+
+    if not wf_pairs:
+        return [], []
+
+    min_ = wf_pairs[-1][1]
     max_ = wf_pairs[0][1]
-    # text size based on the value of word frequency for drawing cloud chart
     textSizeMin = 20
     textSizeMax = 120
-    # 排除分母為0的情況
-    # 這裡的min_是最小值，max_是最大值，這兩個值是頻率的大小
-    if (min_ != max_):
-        max_min_range = max_ - min_
 
+    if min_ != max_:
+        max_min_range = max_ - min_
     else:
-        max_min_range = len(wf_pairs) # 關鍵詞的數量: 20個
-        min_ = min_ - 1 # every size is 1 / len(wf_pairs)
-    
-    # word cloud chart data using proportional scaling
-    # 排除分母為0的情況
-    clouddata = [{'text':w, 'size':int(textSizeMin + (f - min_)/max_min_range * (textSizeMax-textSizeMin))} for w, f in wf_pairs]
+        max_min_range = len(wf_pairs)
+        min_ = min_ - 1
+
+    clouddata = [
+        {
+            'text': w,
+            'size': int(textSizeMin + (f - min_) / max_min_range * (textSizeMax - textSizeMin))
+        }
+        for w, f in wf_pairs
+    ]
 
     return wf_pairs, clouddata
 
 
-# Step1: split paragraphs in text 先將文章切成一個段落一個段落
-def cut_paragraph(text:str):
-    paragraphs = text.split('。')  # 遇到句號就切開
-    #paragraphs = re.split('。', text) # 遇到句號就切開
-    #paragraphs = re.split('[。！!？?]', text) # 遇到句號(也納入問號、驚嘆號、分號等)就切開
+
+def cut_paragraph(text: str):
+    paragraphs = re.split('[。！!？?]', text)  # 可以包含問號、驚嘆號等
     paragraphs = list(filter(None, paragraphs))
     return paragraphs
 
-# Step2: Select all paragraphs where multiple keywords occur.
-
-
-def get_same_para(df_query, user_keywords, cond, k=30):
+def get_same_para(query_set, user_keywords, cond, k=30):
     same_para = []
-    for text in df_query['content']:
-        #print(text)
+    for news in query_set:
+        text = news.content
         paragraphs = cut_paragraph(text)
         for para in paragraphs:
             para += "。"
             if cond == 'and':
-                if all([re.search(kw, para) for kw in user_keywords]):
+                if all(re.search(kw, para) for kw in user_keywords):
                     same_para.append(para)
             elif cond == 'or':
-                if any([re.search(kw, para) for kw in user_keywords]):
+                if any(re.search(kw, para) for kw in user_keywords):
                     same_para.append(para)
-    return same_para[0:k]
+            if len(same_para) >= k:
+                return same_para[:k]
+    return same_para[:k]
 
 
 print("app_user_keyword_association was loaded!")

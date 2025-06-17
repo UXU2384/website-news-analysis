@@ -1,17 +1,17 @@
-from django.http import JsonResponse
-from django.shortcuts import render
-import pandas as pd
+import ast
+from collections import defaultdict
 from datetime import datetime, timedelta
+from typing import Counter
+import pandas as pd
+
+from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.contrib import messages
+from django.shortcuts import render, redirect
+from django.db.models import Q, Max, Min, F
 
 
-# (1) Load news data--approach 1 直接指定某個csv檔案
-def load_df_data_v1():
-    global df 
-    df = pd.read_csv('app_sentiment/dataset/ithome_news_200_preprocessed.csv',sep='|')
-
-    
-load_df_data_v1()
+from app_user_keyword_db.models import NewsData
 
 
 def home(request):
@@ -22,7 +22,7 @@ def home(request):
 @csrf_exempt
 def api_get_sentiment(request):
 
-    userkey = request.POST['userkey']
+    userkey:str = request.POST['userkey']
     cate = request.POST['cate']
     cond = request.POST['cond']
     weeks = int(request.POST['weeks'])
@@ -36,17 +36,17 @@ def api_get_sentiment(request):
 def prepare_for_response(query_keywords, cond, cate, weeks):
 
     # Proceed filtering
-    df_query = filter_df_via_content(query_keywords, cond, cate, weeks)
+    query_set = filter_newsdata_via_content(query_keywords, cond, cate, weeks)
     
-    sentiCount, sentiPercnt = get_article_sentiment(df_query)
+    sentiCount, sentiPercnt = get_article_sentiment(query_set)
 
     if weeks <= 4:
         freq_type = 'D'
     else:
         freq_type = 'W'
 
-    line_data_pos = get_daily_basis_sentiment_count(df_query, sentiment_type='pos', freq_type=freq_type)
-    line_data_neg = get_daily_basis_sentiment_count(df_query, sentiment_type='neg', freq_type=freq_type)
+    line_data_pos = get_daily_basis_sentiment_count(query_set, sentiment_type='pos', freq_type=freq_type)
+    line_data_neg = get_daily_basis_sentiment_count(query_set, sentiment_type='neg', freq_type=freq_type)
 
     response = {
         'sentiCount': sentiCount,
@@ -55,89 +55,94 @@ def prepare_for_response(query_keywords, cond, cate, weeks):
     }
     return response
 
-def get_article_sentiment(df_query:pd.DataFrame):
+def get_article_sentiment(queryset):
     sentiCount = {'Positive': 0, 'Negative': 0, 'Neutral': 0}
     sentiPercnt = {'Positive': 0, 'Negative': 0, 'Neutral': 0}
-    numberOfArticle = len(df_query)
-    for senti in df_query['sentiment']:
-        # determine sentimental polarity
-        if float(senti) >= 0.6:
-            sentiCount['Positive'] += 1
-        elif float(senti) <= 0.4:
-            sentiCount['Negative'] += 1
-        else:
-            sentiCount['Neutral'] += 1
-    for polar in sentiCount :
+
+    # 抓出 sentiment 欄位的值
+    sentiments = queryset.values_list('sentiment', flat=True)
+    numberOfArticle = len(sentiments)
+
+    for senti in sentiments:
         try:
-            sentiPercnt[polar]=int(sentiCount[polar]/numberOfArticle*100)
-        except:
-            sentiPercnt[polar] = 0 # 若分母 numberOfArticle=0會報錯
+            s = float(senti)
+            if s >= 0.6:
+                sentiCount['Positive'] += 1
+            elif s <= 0.4:
+                sentiCount['Negative'] += 1
+            else:
+                sentiCount['Neutral'] += 1
+        except (TypeError, ValueError):
+            continue  # 忽略無法轉成 float 的數值
+
+    for polar in sentiCount:
+        try:
+            sentiPercnt[polar] = int(sentiCount[polar] / numberOfArticle * 100)
+        except ZeroDivisionError:
+            sentiPercnt[polar] = 0
+
     return sentiCount, sentiPercnt
 
 
-def get_daily_basis_sentiment_count(df_query:pd.DataFrame, sentiment_type='pos', freq_type='D'):
-
-    # 自訂正負向中立的標準，sentiment score是機率值，介於0~1之間
-    # Using lambda to determine if an article is postive or not.
+def get_daily_basis_sentiment_count(queryset, sentiment_type='pos', freq_type='D'):
     if sentiment_type == 'pos':
-        lambda_function = lambda senti: 1 if senti >= 0.6 else 0 #大於0.6為正向 
+        sentiment_check = lambda senti: 1 if senti >= 0.6 else 0
     elif sentiment_type == 'neg':
-        lambda_function = lambda senti: 1 if senti <= 0.4 else 0 #小於0.4為負向
+        sentiment_check = lambda senti: 1 if senti <= 0.4 else 0
     elif sentiment_type == 'neutral':
-        lambda_function = lambda senti: 1 if senti > 0.4 & senti < 0.4 else 0 #介於中間為中立
+        sentiment_check = lambda senti: 1 if 0.4 < senti < 0.6 else 0
     else:
-        return None 
-        
-    freq_df = pd.DataFrame({'date_index': pd.to_datetime(df_query['timestamp']),
-                             'frequency': [lambda_function(senti) for senti in df_query['sentiment']]})
-    # Group rows by the date to the daily number of articles. 加總合併同一天新聞，篇數就被計算好了
-    freq_df_group = freq_df.groupby(pd.Grouper(key='date_index',freq=freq_type)).sum()
-    
-    # 'date_index'為index(索引)，將其變成欄位名稱，inplace=True表示原始檔案會被異動
-    freq_df_group.reset_index(inplace=True)
-    
-    # x,y，用於畫趨勢線圖
-    xy_line_data = [{'x':date.strftime('%Y-%m-%d'),'y':freq} for date, freq in zip(freq_df_group['date_index'],freq_df_group['frequency'])]
-    return xy_line_data
+        return []
+
+    # 建立統計用字典: key 是日期字串，value 是計數
+    counter = defaultdict(int)
+
+    # 從 QuerySet 提取時間與情緒欄位並處理
+    for item in queryset.values('timestamp', 'sentiment'):
+        ts = item['timestamp']
+        senti = item['sentiment']
+        date_key = ts.strftime('%Y-%m-%d')  # 依據日分群
+        counter[date_key] += sentiment_check(senti)
+
+    # 排序 & 格式化輸出
+    result = [{'x': k, 'y': v} for k, v in sorted(counter.items())]
+    return result
 
 # Searching keywords from "content" column
 # Here this function uses df['content'] column, while filter_dataFrame() uses df.tokens_v2
-def filter_df_via_content(query_keywords, cond, cate, weeks):
+def filter_newsdata_via_content(query_keywords, cond, cate, weeks):
+    # (1) 取得資料的最大與最小日期
+    end_date:datetime = NewsData.objects.aggregate(max_time=Max('timestamp'))['max_time']
+    start_date_min:datetime = NewsData.objects.aggregate(min_time=Min('timestamp'))['min_time']
 
-    # end date: the date of the latest record of news
-    end_date = df['timestamp'].max()
-    
-    # start date
-    start_date_delta = (datetime.strptime(end_date, '%Y-%m-%d').date() - timedelta(weeks=weeks)).strftime('%Y-%m-%d')
-    start_date_min = df['timestamp'].min()
-    # set start_date as the larger one from the start_date_delta and start_date_min 開始時間選資料最早時間與周數:兩者較晚者
-    start_date = max(start_date_delta,   start_date_min)
+    # 如果資料庫沒有資料，避免錯誤
+    if end_date is None or start_date_min is None:
+        return NewsData.objects.none()
 
+    # (2) 計算起始日期
+    start_date_delta = end_date - timedelta(weeks=weeks)
+    start_date = max(start_date_delta, start_date_min)
 
-    # (1) proceed filtering: a duration of a period of time
-    # 期間條件
-    period_condition = (df['timestamp'] >= start_date) & (df['timestamp'] <= end_date) 
-    
-    # (2) proceed filtering: news category
-    # 新聞類別條件
-    if (cate == "全部"):
-        condition = period_condition  # "全部"類別不必過濾新聞種類
-    else:
-        # 過濾category新聞類別條件
-        condition = period_condition & (df['category'] == cate)
+    # (3) 建立 Q 查詢條件
+    condition = Q(timestamp__gte=start_date) & Q(timestamp__lte=end_date)
 
-    # (3) proceed filtering: and or
-    # and or 條件
-    if (cond == 'and'):
-        # query keywords condition使用者輸入關鍵字條件and
-        condition = condition & df['content'].apply(lambda text: all((qk in text) for qk in query_keywords)) #寫法:all()
-    elif (cond == 'or'):
-        # query keywords condition使用者輸入關鍵字條件
-        condition = condition & df['content'].apply(lambda text: any((qk in text) for qk in query_keywords)) #寫法:any()
-    # condiction is a list of True or False boolean value
-    df_query = df[condition]
+    if cate != "全部":
+        condition &= Q(category=cate)
 
-    return df_query
+    # (4) 關鍵字查詢條件 (使用 Q objects 和 icontains 或 contains)
+    if cond == 'and':
+        for kw in query_keywords:
+            condition &= Q(content__icontains=kw)
+    elif cond == 'or':
+        keyword_q = Q()
+        for kw in query_keywords:
+            keyword_q |= Q(content__icontains=kw)
+        condition &= keyword_q
+
+    # (5) 執行查詢並回傳 QuerySet（如需轉 DataFrame 可加處理）
+    queryset = NewsData.objects.filter(condition)
+
+    return queryset
 
 
 print("app_sentiment was loaded!")

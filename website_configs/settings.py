@@ -33,9 +33,11 @@ INSTALLED_APPS = [
     'app_user_keyword_association',
     'app_job',
     'app_pk',
-    'app_sentiment',
     'app_user_keyword_db',
+    'app_sentiment',
     'app_user_keyword_llm_report',
+    'app_job_analysis',
+    'app_intro',
 ]
 
 MIDDLEWARE = [
